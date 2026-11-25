@@ -17,6 +17,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSyn
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { boardIssue, buildRadar, dataScript, parseSnapshot } from './lib/model.ts';
+import { verifyBoard } from './lib/verify.ts';
 import { buildDossier } from './vendor/makefun-board.ts';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
@@ -50,13 +51,8 @@ if (issue !== null) {
   process.exit(1);
 }
 
-// The watchlist is the gate's coverage row: refuse to write a board that leaves one slug out.
-const ranked = new Set(board.map((row) => row.slug));
-const missing = snapshot.watchlist.filter((slug) => !ranked.has(slug));
-if (missing.length > 0) {
-  process.stderr.write(`token radar: the board misses ${missing.length} watchlist slugs: ${missing.slice(0, 5).join(', ')}\n`);
-  process.exit(1);
-}
+// The board is verified before anything is written: coverage, ranks, order and step lengths.
+const report = verifyBoard(board, snapshot);
 
 mkdirSync(out, { recursive: true });
 writeFileSync(join(out, 'board.json'), `${JSON.stringify({ rows: board })}\n`);
@@ -93,10 +89,8 @@ for (const name of shots) {
 // The dossier is written last: the scorer rebuilds it from this /output and compares bytes.
 writeFileSync(join(out, 'dossier.json'), buildDossier(out, { text_max_bytes: TEXT_MAX_BYTES, screenshots: SCREENSHOT_CAPS, dashboard: { max_files: 400, max_bytes: 4_194_304 } }));
 
-// The first row is the model's strongest call, and the covered count is the coverage row's own figure.
-const leader = board[0];
-const covered = board.filter((row) => row.watchlisted).length;
-process.stdout.write(`token radar: watchlist ${covered}/${snapshot.watchlist.length}, leader ${leader?.name ?? 'none'} at ${leader?.implied_value_usd ?? 0}\n`);
+// The verifier's report is the run's own headline: coverage, the early count and the leader.
+process.stdout.write(`token radar: watchlist ${report.watchlist}/${snapshot.watchlist.length}, ${report.early} early, leader ${report.leader} at ${report.leader_value}\n`);
 
 process.stdout.write(
   `token radar: ${snapshot.protocols.length} protocols, ${snapshot.watchlist.length} on the watchlist, ${board.length} rows scored (${radar.early_size} early, ${radar.live_size} live set aside)\n` +
