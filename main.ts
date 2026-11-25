@@ -92,7 +92,7 @@ writeFileSync(join(out, 'dossier.json'), buildDossier(out, { text_max_bytes: TEX
 
 // The verifier's report is the run's own headline: coverage, the early count and the leader, plus the
 // snapshot date so a log line always says which sealed input this board came from.
-process.stdout.write(`launchline ${snapshot.as_of}: watchlist ${report.watchlist}/${snapshot.watchlist.length}, ${report.early} early, leader ${report.leader} at ${report.leader_value}\n`);
+process.stdout.write(`launchline ${snapshot.as_of} ${radar.model_version}: watchlist ${report.watchlist}/${snapshot.watchlist.length}, ${report.early} early, leader ${report.leader} at ${report.leader_value}\n`);
 
 process.stdout.write(
   `launchline: ${snapshot.protocols.length} protocols, ${snapshot.watchlist.length} on the watchlist, ${board.length} rows scored (${radar.early_size} early, ${radar.live_size} live set aside)\n` +
