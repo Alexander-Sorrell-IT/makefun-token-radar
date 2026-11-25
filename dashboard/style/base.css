@@ -1,0 +1,132 @@
+/* Launchline: a dark instrument desk. One palette, one type scale, one accent; everything else is a
+   hairline and a measured space. No framework, no network, no web fonts: the system's own stack. */
+
+:root {
+  --bg: #080b10;
+  --panel: #0e141c;
+  --panel-2: #121a24;
+  --ink: #e9eef6;
+  --ink-soft: #b3c0d1;
+  --muted: #7f8d9f;
+  --line: #1b2531;
+  --line-2: #27333f;
+  --amber: #f4b740;
+  --amber-dim: #6b5220;
+  --teal: #3ed6b8;
+  --coral: #ff7361;
+  --violet: #9d8cff;
+  --body: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px; --s7: 48px;
+}
+
+* { box-sizing: border-box; }
+html { color-scheme: dark; }
+body {
+  margin: 0;
+  background:
+    radial-gradient(1200px 600px at 82% -10%, rgba(244, 183, 64, 0.07), transparent 60%),
+    radial-gradient(900px 500px at 8% 110%, rgba(62, 214, 184, 0.06), transparent 60%),
+    var(--bg);
+  color: var(--ink);
+  font: 400 14px/1.55 var(--body);
+  -webkit-font-smoothing: antialiased;
+}
+h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
+h1 { font-family: var(--display); font-size: 34px; line-height: 1.1; font-weight: 600; }
+h2 { font-size: 19px; }
+h3 { font-size: 15px; }
+p { margin: 0; }
+a { color: inherit; text-decoration: none; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+.skip { position: absolute; left: -9999px; }
+.skip:focus { left: 16px; top: 16px; z-index: 50; background: var(--panel-2); padding: 10px 14px; border: 1px solid var(--line-2); border-radius: 8px; }
+:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+.sub { color: var(--muted); font-size: 12px; }
+.pos { color: var(--teal); }
+.neg { color: var(--coral); }
+.nowrap { white-space: nowrap; }
+
+.shell { display: grid; grid-template-columns: 208px minmax(0, 1fr); min-height: 100vh; }
+
+/* The rail: the sections, the snapshot's identity, and how much of the floor the board covers. */
+.rail {
+  position: sticky; top: 0; align-self: start; height: 100vh;
+  display: flex; flex-direction: column; gap: var(--s4);
+  padding: var(--s5) var(--s4) var(--s4);
+  border-right: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(18, 26, 36, 0.7), rgba(8, 11, 16, 0.2));
+}
+.brand { display: flex; align-items: center; gap: var(--s2); }
+.brand-mark {
+  width: 16px; height: 16px; border-radius: 50%;
+  border: 1px solid var(--amber);
+  background: conic-gradient(from 200deg, transparent 0 68%, rgba(244, 183, 64, 0.55) 68% 100%);
+  box-shadow: inset 0 0 0 3px var(--bg);
+}
+.brand-name { font-family: var(--display); font-size: 20px; letter-spacing: 0.02em; }
+.brand-name em { font-style: normal; color: var(--amber); }
+.rail-kicker { color: var(--muted); font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase; margin-top: -var(--s2); }
+.rail-nav { display: grid; gap: 2px; margin-top: var(--s2); }
+.rail-nav a {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 10px; border-radius: 6px; color: var(--ink-soft); font-size: 13px;
+  border-left: 2px solid transparent;
+}
+.rail-nav a:hover { background: var(--panel-2); color: var(--ink); }
+.rail-nav a[aria-current="page"] { background: var(--panel-2); color: var(--ink); border-left-color: var(--amber); }
+.rail-meta { margin-top: auto; display: grid; gap: 6px; padding-top: var(--s4); border-top: 1px solid var(--line); font-size: 11.5px; color: var(--muted); }
+.rail-meta b { color: var(--ink-soft); font-weight: 500; font-family: var(--mono); }
+.rail-note { font-size: 10.5px; line-height: 1.5; color: #64707f; }
+
+/* The main column: a page header, a strip of measured figures, then whatever the section renders. */
+.page { padding: var(--s5) var(--s6) var(--s7); max-width: 1220px; }
+.page-head { display: flex; align-items: end; justify-content: space-between; gap: var(--s5); padding-bottom: var(--s4); border-bottom: 1px solid var(--line); }
+.page-head .eyebrow { color: var(--amber); font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase; margin-bottom: 6px; }
+.page-head p.lead { color: var(--ink-soft); max-width: 66ch; margin-top: var(--s2); font-size: 13.5px; }
+.stamp { text-align: right; color: var(--muted); font-size: 11px; font-family: var(--mono); line-height: 1.7; flex: none; }
+.stamp b { display: block; color: var(--ink-soft); font-weight: 500; }
+
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin: var(--s4) 0; }
+.kpi { background: var(--panel); padding: var(--s3) var(--s4); display: grid; gap: 2px; }
+.kpi b { font-family: var(--display); font-size: 26px; line-height: 1.1; font-weight: 600; }
+.kpi span { color: var(--muted); font-size: 10px; letter-spacing: 0.11em; text-transform: uppercase; }
+.kpi small { color: var(--muted); font-size: 11px; }
+
+/* Controls: one row, every control doing the thing its label says. */
+.controls { display: flex; flex-wrap: wrap; align-items: end; gap: var(--s3); padding: var(--s3) 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.field { display: grid; gap: 4px; }
+.field > label, .field > .label { color: var(--muted); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; }
+.field input, .field select {
+  min-height: 34px; padding: 0 10px; background: var(--panel); color: var(--ink);
+  border: 1px solid var(--line-2); border-radius: 6px;
+}
+.field input { min-width: 230px; }
+.field input::placeholder { color: #5c6878; }
+.seg { display: flex; gap: 2px; padding: 2px; background: var(--panel); border: 1px solid var(--line-2); border-radius: 6px; }
+.seg button { min-height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--muted); font-size: 12px; }
+.seg button[aria-pressed="true"] { background: var(--amber); color: #1a1405; font-weight: 600; }
+.seg button:hover { color: var(--ink); }
+.seg button[aria-pressed="true"]:hover { color: #1a1405; }
+.count { margin-left: auto; align-self: center; color: var(--muted); font-size: 11px; font-family: var(--mono); }
+
+@media (max-width: 1000px) {
+  .shell { grid-template-columns: 1fr; }
+  .rail { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; gap: var(--s3); border-right: 0; border-bottom: 1px solid var(--line); padding: var(--s3) var(--s4); }
+  .rail-kicker, .rail-note, .rail-meta { display: none; }
+  .rail-nav { display: flex; margin: 0; }
+  .rail-nav a { border-left: 0; border-bottom: 2px solid transparent; }
+  .rail-nav a[aria-current="page"] { border-left: 0; border-bottom-color: var(--amber); }
+  .page { padding: var(--s4) var(--s4) var(--s6); }
+  .page-head { flex-direction: column; align-items: start; gap: var(--s3); }
+  .stamp { text-align: left; }
+  .kpis { grid-template-columns: 1fr 1fr; }
+  .field input { min-width: 0; width: 100%; }
+  .controls .field { flex: 1 1 100%; }
+  .count { margin-left: 0; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition-duration: 0.01ms !important; } }

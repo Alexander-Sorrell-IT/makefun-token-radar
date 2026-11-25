@@ -3,14 +3,33 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Launchline: pre-token protocols ranked by implied value</title>
-<meta name="description" content="A radar of protocols with no token yet, ranked by what a launch could be worth and paired with a concrete farm plan.">
-<link rel="stylesheet" href="app.css">
+<title>Launchline — the pre-token radar</title>
+<meta name="description" content="Every protocol that records no token, ranked by an implied value measured on the snapshot's own trading multiples, each with a farm plan that carries its cost and its time.">
+<meta name="color-scheme" content="dark">
+<link rel="stylesheet" href="style/base.css">
+<link rel="stylesheet" href="style/board.css">
 </head>
 <body>
-<a class="skip" href="#board">Skip to the board</a>
-<main id="board" tabindex="-1" aria-busy="true"></main>
+<a class="skip" href="#main">Skip to the board</a>
+<div class="shell">
+  <aside class="rail">
+    <a class="brand" href="#/" aria-label="Launchline, the pre-token radar">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand-name">Launch<em>line</em></span>
+    </a>
+    <p class="rail-kicker">Pre-token radar</p>
+    <nav class="rail-nav" aria-label="Sections">
+      <a href="#/" data-nav="board">Board</a>
+      <a href="#/watchlist" data-nav="watchlist">Watchlist</a>
+      <a href="#/live" data-nav="live">Live tokens</a>
+      <a href="#/method" data-nav="method">Method</a>
+    </nav>
+    <div class="rail-meta" id="rail-meta"></div>
+    <p class="rail-note">Implied value is a model of a launch, never a promise that one comes. Figures are the sealed snapshot's, not a live feed.</p>
+  </aside>
+  <main id="main" tabindex="-1" aria-busy="true"></main>
+</div>
 <script src="../data.js"></script>
-<script src="app.js"></script>
+<script type="module" src="js/app.js"></script>
 </body>
 </html>

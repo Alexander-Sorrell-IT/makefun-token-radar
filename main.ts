@@ -15,6 +15,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { calibrate } from './lib/calibrate.ts';
 import { boardIssue, buildRadar, dataScript, parseSnapshot } from './lib/model.ts';
 import { verifyBoard } from './lib/verify.ts';
 import { buildDossier } from './vendor/makefun-board.ts';
@@ -43,7 +44,11 @@ if (!existsSync(inputFile)) {
 const out = arg('output', process.env.MAKEFUN_OUTPUT_DIR ?? '/output');
 
 const snapshot = parseSnapshot(readFileSync(inputFile, 'utf8'));
-const { board, radar } = buildRadar(snapshot);
+
+// The base multiples are measured on this snapshot before anything is scored: the table is the model's
+// one input that is not a constant, and the page shows it beside the rows it priced.
+const calibration = calibrate(snapshot.protocols);
+const { board, radar } = buildRadar(snapshot, calibration);
 
 // The gate's own shape is checked first; then the verifier checks the ranking it depends on.
 const issue = boardIssue(board, snapshot);
@@ -58,6 +63,24 @@ const report = verifyBoard(board, snapshot);
 mkdirSync(out, { recursive: true });
 writeFileSync(join(out, 'board.json'), `${JSON.stringify({ rows: board })}\n`);
 writeFileSync(join(out, 'data.js'), dataScript(radar));
+
+/** Copy a directory tree into `to`, skipping dot-files, and return how many files were written. */
+function copyTree(from: string, to: string): number {
+  if (!existsSync(from)) return 0;
+  mkdirSync(to, { recursive: true });
+  let written = 0;
+  for (const name of readdirSync(from).sort()) {
+    if (name.startsWith('.')) continue;
+    const path = join(from, name);
+    if (statSync(path).isDirectory()) {
+      written += copyTree(path, join(to, name));
+    } else if (statSync(path).isFile()) {
+      copyFileSync(path, join(to, name));
+      written += 1;
+    }
+  }
+  return written;
+}
 
 /** Copy one directory's regular files into `to`, skipping names that start with a dot. */
 function copyFiles(from: string, to: string): string[] {
@@ -74,7 +97,7 @@ function copyFiles(from: string, to: string): string[] {
   return copied;
 }
 
-copyFiles(join(here, 'dashboard'), join(out, 'dashboard'));
+const dashboardFiles = copyTree(join(here, 'dashboard'), join(out, 'dashboard'));
 const shots = copyFiles(join(here, 'screenshots'), join(out, 'screenshots'));
 if (shots.length < 3) {
   process.stderr.write(`launchline: screenshots/ holds ${shots.length} image${shots.length === 1 ? '' : 's'}: hand in 3, the board, a detail view and a filtered view\n`);
@@ -92,9 +115,11 @@ writeFileSync(join(out, 'dossier.json'), buildDossier(out, { text_max_bytes: TEX
 
 // The verifier's report is the run's own headline: coverage, the early count and the leader, plus the
 // snapshot date so a log line always says which sealed input this board came from.
-process.stdout.write(`launchline ${snapshot.as_of} ${radar.model_version}: watchlist ${report.watchlist}/${snapshot.watchlist.length}, ${report.early} early, leader ${report.leader} at ${report.leader_value}\n`);
-
 process.stdout.write(
-  `launchline: ${snapshot.protocols.length} protocols, ${snapshot.watchlist.length} on the watchlist, ${board.length} rows scored (${radar.early_size} early, ${radar.live_size} live set aside)\n` +
-    `launchline: wrote ${join(out, 'board.json')}, ${join(out, 'data.js')}, ${join(out, 'dashboard')} (3 files), ${join(out, 'screenshots')} (${shots.length} images) and ${join(out, 'dossier.json')}\n`,
+  `launchline ${snapshot.as_of} ${radar.model_version}: watchlist ${report.watchlist}/${snapshot.watchlist.length}, ${report.early} early, leader ${report.leader} at ${report.leader_value}, ` +
+    `multiple ${calibration.overall.multiple} from ${calibration.ratios} trading protocols\n`,
+);
+
+process.stdout.write(    `launchline: ${snapshot.protocols.length} protocols, ${snapshot.watchlist.length} on the watchlist, ${board.length} rows scored (${radar.stats.early_size} early, ${radar.stats.live_size} live set aside)\n` +
+    `launchline: wrote ${join(out, 'board.json')}, ${join(out, 'data.js')}, ${join(out, 'dashboard')} (${dashboardFiles} files), ${join(out, 'screenshots')} (${shots.length} images) and ${join(out, 'dossier.json')}\n`,
 );
