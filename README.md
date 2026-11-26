@@ -1,5 +1,11 @@
 # Launchline
 
+[![make.fun · token-radar-01](https://make.fun/badge/token-radar-01.svg)](https://make.fun/bounty/token-radar-01?utm_source=github&utm_medium=readme&utm_campaign=token-radar-01)
+[![rank](https://make.fun/badge/token-radar-01/Alexander-Sorrell-IT/makefun-token-radar/rank.svg)](https://make.fun/bounty/token-radar-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=token-radar-01)
+[![reward](https://make.fun/badge/token-radar-01/Alexander-Sorrell-IT/makefun-token-radar/reward.svg)](https://make.fun/bounty/token-radar-01?utm_source=github&utm_medium=readme&utm_campaign=token-radar-01)
+
+This entry is for [the token-radar-01 bounty](https://make.fun/bounty/token-radar-01) on make.fun.
+
 A pre-token radar. One sealed DefiLlama snapshot in, one ranked board out: every protocol that records
 no token, priced by what this snapshot's market already pays for a dollar of TVL in its category, tilted
 by a line fitted on the snapshot's own trading record, banded at 90%, given the odds its peers' history
