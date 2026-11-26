@@ -1,6 +1,5 @@
-// The live set: protocols whose token already trades. They are kept apart from the board on purpose,
-// because their market cap is a fact rather than the model's claim, and the ratio beside each one is the
-// very figure the calibration is measured from.
+// The live set: protocols whose token already trades. Their market cap is a fact, not the model's claim,
+// and the ratio beside each one is the figure the calibration is measured from.
 
 import { categoryOf, chainsOf, multiple, pct, signClass, usd } from '../format.js';
 import { escape } from '../charts.js';
@@ -24,7 +23,7 @@ export function live(data) {
   ${head(data, {
     eyebrow: 'Live tokens',
     title: 'The protocols that already have a market, set beside the ones that do not.',
-    lead: 'Every protocol here records a token and a market cap, so its market cap is a fact and not the model’s claim. They are never mixed into the ranked board. The ratio beside each one — market cap per dollar of TVL — is exactly the figure the calibration is measured from.',
+    lead: 'Every protocol here records a token and a market cap, so its cap is a fact, never mixed into the ranked board. The ratio beside each one — market cap per dollar of TVL — is the figure the calibration is measured from.',
   })}
   <div class="panel">
     <div class="panel-head"><h2>The snapshot's largest trading protocols</h2><span class="sub">${data.live.length} shown · by market cap</span></div>

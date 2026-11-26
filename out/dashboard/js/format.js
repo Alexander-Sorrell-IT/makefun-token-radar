@@ -12,16 +12,37 @@ export function usd(value) {
   return `$${Math.round(value)}`;
 }
 
+/** A dollar figure with cents, for a number a reader compares across rows: $2.47 an hour. */
+export function usdFine(value) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return 'n/a';
+  const abs = Math.abs(value);
+  if (abs >= 1e6) return usd(value);
+  if (abs >= 1e3) return `$${Math.round(value).toLocaleString('en-US')}`;
+  return `$${value.toFixed(2)}`;
+}
+
 /** A percentage with its sign, to two places. */
 export function pct(value) {
   if (value === null || value === undefined || !Number.isFinite(value)) return 'n/a';
   return `${value > 0 ? '+' : ''}${value.toFixed(2)}%`;
 }
 
+/** A plain percentage with a fixed number of places, no sign: 17.2%. */
+export function percentPoint(value, digits = 1) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return 'n/a';
+  return `${value.toFixed(digits)}%`;
+}
+
 /** A multiplier as the model states it: x0.2138. */
 export function multiple(value) {
   if (value === null || value === undefined || !Number.isFinite(value)) return 'n/a';
   return `x${value.toFixed(4).replace(/0+$/, '').replace(/\.$/, '')}`;
+}
+
+/** A multiplier with two places, for a table that compares several side by side. */
+export function multiple2(value) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return 'n/a';
+  return `x${value.toFixed(2)}`;
 }
 
 /** An age in days as a reader says it: 45d, 1.5y. */
@@ -45,11 +66,6 @@ export function date(value) {
 export function signClass(value) {
   if (value === null || value === undefined) return '';
   return value >= 0 ? 'pos' : 'neg';
-}
-
-/** The first chain a protocol names, or a phrase that reads in a sentence. */
-export function chainOf(row) {
-  return row.chains && row.chains.length > 0 ? row.chains[0] : 'its main chain';
 }
 
 /** The chains, two of them, for a row's second line. */

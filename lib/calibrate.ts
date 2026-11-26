@@ -31,8 +31,8 @@ const RATIO_FLOOR = 0.02;
 const RATIO_CAP = 10;
 
 /** The model's own bounds: whatever the table says, a dollar of TVL is worth between these. */
-export const MULTIPLE_FLOOR = 0.05;
-export const MULTIPLE_CAP = 4;
+export const MULTIPLE_FLOOR = 0.02;
+export const MULTIPLE_CAP = 6;
 
 /** The smallest number of trading protocols a category needs before its own median is used. */
 const MIN_SAMPLES = 3;

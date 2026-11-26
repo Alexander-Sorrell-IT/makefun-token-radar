@@ -5,21 +5,30 @@
 // the snapshot carries is ranked too, and the protocols whose token already trades are kept apart
 // with the market's own market caps, never mixed into a ranking the model made.
 //
-// The implied value is one function of three snapshot figures and one measured table:
+// The implied value is one function of three snapshot figures and one fitted table:
 //
-//   multiple   = median(mcap_usd / tvl_usd) over the snapshot's protocols in the same category
+//   base       = median(mcap_usd / tvl_usd) over the snapshot's protocols in the same category
 //                (the snapshot-wide median where the category has fewer than three of them)
+//   tilt       = exp( a + b * (log10(tvl) - mean) + c * (change_7d / 100 - mean) )
+//                a, b and c fitted by least squares on the snapshot's own trading protocols, and
+//                tested on two held-out thirds before the page prints them
+//   multiple   = base * tilt, kept inside the model's floor and cap
 //   growthMult = 1 + clamp(change_7d, -60, 150) / 100 x 0.5
 //   maturity   = 0.6 + min(age_days, 1460) / 1460 x 0.4
 //   implied    = max(1, round(tvl_usd x multiple x growthMult x maturity))
+//   interval   = implied x exp(+/- 1.645 x sigma), sigma the fit's own residual spread
 //
 // So the base multiple is not a constant: it is what this snapshot's market already pays for a dollar
-// of TVL in that category. The table is on the page, with each category's sample count, and the page
-// recomputes every row from the same figures, so the number on screen and the number in board.json are
-// visibly the same arithmetic. No protocol is named in this file and no row is hand-picked.
+// of TVL in that category, and the tilt is what this snapshot's record says about size and momentum
+// within it. The table and the fitted line are on the page with their sample counts and their held-out
+// error, and the page recomputes every row from the same figures, so the number on screen and the number
+// in board.json are visibly the same arithmetic. No protocol is named in this file and no row is
+// hand-picked.
 
 import { calibrate, clamp, median, multipleFor, MULTIPLE_CAP, MULTIPLE_FLOOR, type Calibration } from './calibrate.ts';
-import { capitalFor, farmPlan, holdDaysFor, stepText } from './plan.ts';
+import { fitModel, logMultipleSe, medianTable, multipleAt, zScores, type Fit } from './fit.ts';
+import { oddsFor, oddsIndex, type Odds, type OddsIndex } from './odds.ts';
+import { capitalFor, economicsFor, farmPlan, holdDaysFor, PLAN_ASSUMPTIONS, stepText } from './plan.ts';
 
 /** One protocol, exactly the ten fields the sealed snapshot carries. */
 export interface SnapshotProtocol {
@@ -55,6 +64,8 @@ export interface ModelConstants {
   unknown_age_days: number;
   multiple_floor: number;
   multiple_cap: number;
+  interval_z: number;
+  pool_share: number;
 }
 
 export const MODEL: ModelConstants = {
@@ -67,13 +78,40 @@ export const MODEL: ModelConstants = {
   unknown_age_days: 365,
   multiple_floor: MULTIPLE_FLOOR,
   multiple_cap: MULTIPLE_CAP,
+  interval_z: 1.645,
+  pool_share: PLAN_ASSUMPTIONS.pool_share,
 };
 
 /** The model's version label: the page names it and every row's maths is checked against it. */
-export const MODEL_VERSION = 'launchline-3';
+export const MODEL_VERSION = 'launchline-4';
 
 /** A row's confidence in its own number, from the category's sample count and the protocol's record. */
 export type Confidence = 'high' | 'medium' | 'low';
+
+/** What one protocol is priced at, with the pieces the page prints. */
+export interface Price {
+  implied: number;
+  low: number;
+  high: number;
+  growthPct: number;
+  growthMult: number;
+  maturityMult: number;
+  age: number | null;
+  base: number;
+  tilt: number;
+  multiple: number;
+  samples: number;
+  source: 'category' | 'snapshot';
+}
+
+/** Everything impliedValue needs, gathered once per run. */
+export interface PricingContext {
+  as_of: string;
+  calibration: Calibration;
+  fit: Fit;
+  medians: Record<string, number>;
+  model: ModelConstants;
+}
 
 /** One row of board.json: the ranked board's row, with the model's own inputs beside it. */
 export interface BoardRow {
@@ -92,12 +130,29 @@ export interface BoardRow {
   watchlisted: boolean;
   age_days: number | null;
   implied_value_usd: number;
+  implied_low_usd: number;
+  implied_high_usd: number;
   multiple: number;
+  multiple_base: number;
+  multiple_tilt: number;
   multiple_samples: number;
+  multiple_source: string;
   growth_multiplier: number;
   maturity_multiplier: number;
+  token_odds_pct: number;
+  token_odds_samples: number;
+  token_odds_scope: string;
   capital_usd: number;
   hold_days: number;
+  pool_value_usd: number;
+  expected_value_usd: number;
+  gas_usd: number;
+  hours: number;
+  net_usd: number;
+  ev_per_hour_usd: number;
+  break_even_implied_usd: number;
+  min_capital_usd: number;
+  plan_verdict: string;
   confidence: Confidence;
   farm_steps: string[];
 }
@@ -115,13 +170,28 @@ export interface RadarRow {
   listed_at: string | null;
   age_days: number | null;
   implied_value_usd: number;
+  implied_low_usd: number;
+  implied_high_usd: number;
   multiple: number;
+  multiple_base: number;
+  multiple_tilt: number;
   multiple_samples: number;
   growth_multiplier: number;
   maturity_multiplier: number;
+  token_odds_pct: number;
+  token_odds_samples: number;
   watchlisted: boolean;
   capital_usd: number;
   hold_days: number;
+  pool_value_usd: number;
+  expected_value_usd: number;
+  gas_usd: number;
+  hours: number;
+  net_usd: number;
+  ev_per_hour_usd: number;
+  break_even_implied_usd: number;
+  min_capital_usd: number;
+  plan_verdict: string;
   confidence: Confidence;
   farm_steps: string[];
 }
@@ -150,9 +220,18 @@ export interface RadarStats {
   categories: number;
   newest_days: number | null;
   growth_median_pct: number;
+  median_odds_pct: number;
+  plans_clearing_gas: number;
 }
 
-/** Everything the dashboard needs: the ranked board, the calibration, the live set and the model. */
+/** One category's odds, as the method page prints them. */
+export interface CategoryOdds {
+  pct: number;
+  total: number;
+  trading: number;
+}
+
+/** Everything the dashboard needs: the ranked board, the calibration, the fit, the odds and the model. */
 export interface RadarData {
   as_of: string;
   source: string;
@@ -160,6 +239,10 @@ export interface RadarData {
   model: ModelConstants;
   model_version: string;
   calibration: Calibration;
+  fit: Fit;
+  odds_by_category: Record<string, CategoryOdds>;
+  odds_overall: CategoryOdds;
+  plan_assumptions: typeof PLAN_ASSUMPTIONS;
   stats: RadarStats;
   rows: RadarRow[];
   live: LiveRow[];
@@ -189,29 +272,37 @@ export function ageDays(asOf: string, listedAt: string | null): number | null {
   return Math.max(0, Math.floor((a - b) / DAY_MS));
 }
 
-/** The three multipliers and the implied value one protocol gets under the measured table. */
-export function impliedValue(
-  protocol: SnapshotProtocol,
-  asOf: string,
-  calibration: Calibration,
-  model: ModelConstants = MODEL,
-): { implied: number; growthPct: number; growthMult: number; maturityMult: number; age: number | null; multiple: number; samples: number } {
-  const age = ageDays(asOf, protocol.listed_at);
+const round4 = (n: number): number => Math.round(n * 1e4) / 1e4;
+
+/** The three multipliers, the fitted multiple and its 90% band for one protocol. */
+export function impliedValue(protocol: SnapshotProtocol, ctx: PricingContext): Price {
+  const { model } = ctx;
+  const age = ageDays(ctx.as_of, protocol.listed_at);
   const growthPct = clamp(model.growth_floor, model.growth_cap, finite(protocol.change_7d, 0));
   const growthMult = 1 + (growthPct / 100) * model.growth_weight;
   const ageForModel = age ?? model.unknown_age_days;
   const maturityMult =
     model.maturity_floor + (Math.min(Math.max(ageForModel, 0), model.maturity_days) / model.maturity_days) * model.maturity_range;
-  const measured = multipleFor(calibration, protocol.category);
-  const implied = Math.max(1, Math.round(protocol.tvl_usd * measured.multiple * growthMult * maturityMult));
+  const key = protocol.category ?? 'Uncategorised';
+  const base = ctx.medians[key] ?? ctx.calibration.overall.multiple;
+  const multiple = multipleAt(ctx.fit, ctx.medians, key, protocol.tvl_usd, protocol.change_7d);
+  const tilt = base > 0 ? multiple / base : 1;
+  const [z1, z2] = zScores(ctx.fit, protocol.tvl_usd, protocol.change_7d);
+  const band = Math.exp(ctx.fit.interval_z * logMultipleSe(ctx.fit, z1, z2));
+  const centre = protocol.tvl_usd * multiple * growthMult * maturityMult;
   return {
-    implied,
+    implied: Math.max(1, Math.round(centre)),
+    low: Math.max(1, Math.round(centre / band)),
+    high: Math.max(1, Math.round(centre * band)),
     growthPct,
     growthMult,
     maturityMult,
     age,
-    multiple: measured.multiple,
-    samples: measured.samples,
+    base: round4(base),
+    tilt: round4(tilt),
+    multiple: round4(multiple),
+    samples: multipleFor(ctx.calibration, protocol.category).samples,
+    source: multipleFor(ctx.calibration, protocol.category).measured ? 'category' : 'snapshot',
   };
 }
 
@@ -254,10 +345,20 @@ export function confidenceFor(age: number | null, tvl: number, samples: number):
   return 'low';
 }
 
-const round4 = (n: number): number => Math.round(n * 1e4) / 1e4;
+/** Every protocol's age at the snapshot date, once, for the odds index and the rows. */
+export function ageIndex(snapshot: Snapshot): Map<string, number | null> {
+  const ages = new Map<string, number | null>();
+  for (const p of snapshot.protocols) ages.set(p.slug, ageDays(snapshot.as_of, p.listed_at));
+  return ages;
+}
 
 /** The protocols the board ranks: the whole watchlist, then every other rankable pre-token protocol. */
-export function buildBoard(snapshot: Snapshot, calibration: Calibration = calibrate(snapshot.protocols), model: ModelConstants = MODEL): BoardRow[] {
+export function buildBoard(
+  snapshot: Snapshot,
+  calibration: Calibration = calibrate(snapshot.protocols),
+  fit: Fit = fitModel(snapshot.protocols, calibration),
+  model: ModelConstants = MODEL,
+): BoardRow[] {
   const index = new Map(snapshot.protocols.map((p) => [p.slug, p]));
   const watchlist = new Set(snapshot.watchlist);
   const chosen = new Map<string, SnapshotProtocol>();
@@ -271,8 +372,26 @@ export function buildBoard(snapshot: Snapshot, calibration: Calibration = calibr
     if (!chosen.has(p.slug) && isRankable(p)) chosen.set(p.slug, p);
   }
 
-  const scored = [...chosen.values()].map((p) => ({ p, ...impliedValue(p, snapshot.as_of, calibration, model) }));
-  scored.sort((a, b) => b.implied - a.implied || (a.p.slug < b.p.slug ? -1 : a.p.slug > b.p.slug ? 1 : 0));
+  const ctx: PricingContext = {
+    as_of: snapshot.as_of,
+    calibration,
+    fit,
+    medians: medianTable(calibration),
+    model,
+  };
+  const ages = ageIndex(snapshot);
+  const odds = oddsIndex(snapshot.protocols, ages);
+
+  const scored = [...chosen.values()].map((p) => {
+    const price = impliedValue(p, ctx);
+    const capital = capitalFor(p.tvl_usd);
+    const hold = holdDaysFor(price.age);
+    const chain = p.chains.length > 0 ? p.chains[0]! : 'its main chain';
+    const economics = economicsFor(price.implied, p.tvl_usd, capital, hold, chain);
+    const oddsRow: Odds = oddsFor(odds, p.category, price.age);
+    return { p, price, capital, hold, economics, oddsRow };
+  });
+  scored.sort((a, b) => b.price.implied - a.price.implied || (a.p.slug < b.p.slug ? -1 : a.p.slug > b.p.slug ? 1 : 0));
 
   return scored.map((s, i) => ({
     rank: i + 1,
@@ -288,16 +407,33 @@ export function buildBoard(snapshot: Snapshot, calibration: Calibration = calibr
     symbol: s.p.symbol,
     token_status: 'pre-token',
     watchlisted: watchlist.has(s.p.slug),
-    age_days: s.age,
-    implied_value_usd: s.implied,
-    multiple: round4(s.multiple),
-    multiple_samples: s.samples,
-    growth_multiplier: round4(s.growthMult),
-    maturity_multiplier: round4(s.maturityMult),
-    capital_usd: capitalFor(s.p.tvl_usd),
-    hold_days: holdDaysFor(s.age),
-    confidence: confidenceFor(s.age, s.p.tvl_usd, s.samples),
-    farm_steps: farmPlan(s.p, s.age).map(stepText),
+    age_days: s.price.age,
+    implied_value_usd: s.price.implied,
+    implied_low_usd: s.price.low,
+    implied_high_usd: s.price.high,
+    multiple: s.price.multiple,
+    multiple_base: s.price.base,
+    multiple_tilt: s.price.tilt,
+    multiple_samples: s.price.samples,
+    multiple_source: s.price.source,
+    growth_multiplier: round4(s.price.growthMult),
+    maturity_multiplier: round4(s.price.maturityMult),
+    token_odds_pct: Math.round(s.oddsRow.pct * 10) / 10,
+    token_odds_samples: s.oddsRow.total,
+    token_odds_scope: s.oddsRow.scope,
+    capital_usd: s.capital,
+    hold_days: s.hold,
+    pool_value_usd: s.economics.pool_value_usd,
+    expected_value_usd: s.economics.expected_value_usd,
+    gas_usd: s.economics.gas_usd,
+    hours: s.economics.hours,
+    net_usd: s.economics.net_usd,
+    ev_per_hour_usd: s.economics.ev_per_hour_usd,
+    break_even_implied_usd: s.economics.break_even_implied_usd,
+    min_capital_usd: s.economics.min_capital_usd,
+    plan_verdict: s.economics.verdict,
+    confidence: confidenceFor(s.price.age, s.p.tvl_usd, s.price.samples),
+    farm_steps: farmPlan(s.p, s.price.age, s.price.implied, s.economics).map(stepText),
   }));
 }
 
@@ -333,13 +469,30 @@ export function radarRow(row: BoardRow): RadarRow {
     listed_at: row.listed_at,
     age_days: row.age_days,
     implied_value_usd: row.implied_value_usd,
+    implied_low_usd: row.implied_low_usd,
+    implied_high_usd: row.implied_high_usd,
     multiple: row.multiple,
+    multiple_base: row.multiple_base,
+    multiple_tilt: row.multiple_tilt,
     multiple_samples: row.multiple_samples,
+    multiple_source: row.multiple_source,
     growth_multiplier: row.growth_multiplier,
     maturity_multiplier: row.maturity_multiplier,
+    token_odds_pct: row.token_odds_pct,
+    token_odds_samples: row.token_odds_samples,
+    token_odds_scope: row.token_odds_scope,
     watchlisted: row.watchlisted,
     capital_usd: row.capital_usd,
     hold_days: row.hold_days,
+    pool_value_usd: row.pool_value_usd,
+    expected_value_usd: row.expected_value_usd,
+    gas_usd: row.gas_usd,
+    hours: row.hours,
+    net_usd: row.net_usd,
+    ev_per_hour_usd: row.ev_per_hour_usd,
+    break_even_implied_usd: row.break_even_implied_usd,
+    min_capital_usd: row.min_capital_usd,
+    plan_verdict: row.plan_verdict,
     confidence: row.confidence,
     farm_steps: row.farm_steps,
   };
@@ -349,15 +502,21 @@ export function radarRow(row: BoardRow): RadarRow {
 export function buildRadar(
   snapshot: Snapshot,
   calibration: Calibration = calibrate(snapshot.protocols),
+  fit: Fit = fitModel(snapshot.protocols, calibration),
   model: ModelConstants = MODEL,
 ): { board: BoardRow[]; radar: RadarData } {
-  const board = buildBoard(snapshot, calibration, model);
+  const board = buildBoard(snapshot, calibration, fit, model);
   const live = liveRows(snapshot);
   const watchlist = new Set(snapshot.watchlist);
   const covered = snapshot.watchlist.filter((slug) => board.some((r) => r.slug === slug)).length;
   const ages = board.map((r) => r.age_days).filter((d): d is number => d !== null);
   const growths = board.map((r) => r.change_7d).filter((g): g is number => g !== null);
   const categories = new Set(board.map((r) => r.category ?? 'Uncategorised'));
+  const odds = oddsIndex(snapshot.protocols, ageIndex(snapshot));
+  const oddsByCategory: Record<string, CategoryOdds> = {};
+  for (const [key, cell] of Object.entries(odds.by_category)) {
+    oddsByCategory[key] = { pct: ((cell.trading + 1) / (cell.total + 2)) * 100, total: cell.total, trading: cell.trading };
+  }
   const radar: RadarData = {
     as_of: snapshot.as_of,
     source: snapshot.source,
@@ -365,6 +524,10 @@ export function buildRadar(
     model,
     model_version: MODEL_VERSION,
     calibration,
+    fit,
+    odds_by_category: oddsByCategory,
+    odds_overall: { pct: ((odds.overall.trading + 1) / (odds.overall.total + 2)) * 100, total: odds.overall.total, trading: odds.overall.trading },
+    plan_assumptions: PLAN_ASSUMPTIONS,
     stats: {
       watchlist_size: snapshot.watchlist.length,
       board_size: board.length,
@@ -376,6 +539,8 @@ export function buildRadar(
       categories: categories.size,
       newest_days: ages.length > 0 ? Math.min(...ages) : null,
       growth_median_pct: Math.round(median(growths) * 100) / 100,
+      median_odds_pct: Math.round(median(board.map((r) => r.token_odds_pct)) * 10) / 10,
+      plans_clearing_gas: board.filter((r) => r.plan_verdict === 'clears its gas').length,
     },
     rows: board.map(radarRow),
     live,
@@ -426,7 +591,7 @@ export function parseSnapshot(text: string): Snapshot {
   };
 }
 
-/** Why a board is not one the gate will take, or null: coverage, ranks, order, one shared value, farm steps. */
+/** Why a board is not one the gate will take, or null: coverage, ranks, order, interval, odds and steps. */
 export function boardIssue(board: BoardRow[], snapshot: Snapshot): string | null {
   if (board.length < 100 || board.length > 4000) return `the board holds ${board.length} rows`;
   const slugs = new Set(board.map((r) => r.slug));
@@ -445,6 +610,12 @@ export function boardIssue(board: BoardRow[], snapshot: Snapshot): string | null
     if (!Number.isSafeInteger(r.implied_value_usd) || r.implied_value_usd <= 0 || r.implied_value_usd > 100_000_000_000_000) {
       return `${r.slug} has implied value ${r.implied_value_usd}`;
     }
+    if (!(r.implied_low_usd <= r.implied_value_usd && r.implied_value_usd <= r.implied_high_usd)) {
+      return `${r.slug} has an interval that does not contain its own value`;
+    }
+    if (!(r.token_odds_pct > 0 && r.token_odds_pct <= 100)) return `${r.slug} has token odds ${r.token_odds_pct}`;
+    if (!Number.isFinite(r.ev_per_hour_usd) || !Number.isFinite(r.net_usd)) return `${r.slug} has a plan ledger that does not add up`;
+    if (!(r.break_even_implied_usd > 0) || !(r.min_capital_usd > 0)) return `${r.slug} has no break-even`;
   }
   return null;
 }

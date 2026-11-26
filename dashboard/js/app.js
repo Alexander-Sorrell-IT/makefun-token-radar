@@ -1,10 +1,9 @@
-// The app: read the data the run wrote, read the address, render the section, and wire the controls.
-// One render function, one place for state, no framework: every control writes the address and the
-// router reads it back, so the page and its URL never disagree.
+// The app: read the data, read the address, render the section, wire the controls. Every control writes
+// the address and the router reads it back, so the page and its URL never disagree.
 
 import { categoryOf } from './format.js';
 import { parse, write } from './router.js';
-import { controls, foot, head, kpis, table } from './views/board.js';
+import { controls, foot, head, kpis, strip, table } from './views/board.js';
 import { detail } from './views/detail.js';
 import { live } from './views/live.js';
 import { method } from './views/method.js';
@@ -13,7 +12,7 @@ const DATA = window.RADAR;
 const main = document.getElementById('main');
 const railMeta = document.getElementById('rail-meta');
 
-/** The rows a filter keeps: search over name, category and chains; category; confidence. */
+/** The rows a filter keeps: search, category, confidence. */
 function filterRows(rows, filters, scope) {
   const q = filters.q.trim().toLowerCase();
   return rows.filter((r) => {
@@ -25,7 +24,7 @@ function filterRows(rows, filters, scope) {
   });
 }
 
-/** The rows in the sort the address asks for, with the slug as the tie-break so it is stable. */
+/** The rows in the address's sort, slug as the stable tie-break. */
 function sortRows(rows, filters) {
   const key = filters.sort;
   const dir = filters.dir;
@@ -36,6 +35,8 @@ function sortRows(rows, filters) {
     else if (key === 'tvl') { av = a.tvl_usd; bv = b.tvl_usd; }
     else if (key === 'growth') { av = a.change_7d ?? -Infinity; bv = b.change_7d ?? -Infinity; }
     else if (key === 'age') { av = a.age_days ?? Infinity; bv = b.age_days ?? Infinity; }
+    else if (key === 'odds') { av = a.token_odds_pct; bv = b.token_odds_pct; }
+    else if (key === 'ev') { av = a.ev_per_hour_usd; bv = b.ev_per_hour_usd; }
     else { av = a.implied_value_usd; bv = b.implied_value_usd; }
     if (av < bv) return -dir;
     if (av > bv) return dir;
@@ -43,17 +44,18 @@ function sortRows(rows, filters) {
   });
 }
 
-/** The board or watchlist page: shared, because the watchlist is the board's floor, not another page. */
+/** The board or watchlist page: one view, two scopes. */
 function boardPage(route, scope) {
   const rows = sortRows(filterRows(DATA.rows, route.filters, scope), route.filters);
   const title = scope === 'watchlist' ? 'The floor, ranked: 40 protocols the house already watches.' : 'Every protocol with no token, ranked by what a launch could be worth.';
   const lead = scope === 'watchlist'
     ? 'This is the watchlist the house kept: $50M of TVL or more, no token recorded, and no wrapper, stake or bridge of one that trades. It is the board’s floor, never its ceiling — the full board carries every pre-token protocol the snapshot has, at any size.'
-    : 'The board covers every protocol on the snapshot’s watchlist and every other protocol that records no token, at any size. Each row is priced by the category’s measured market-cap multiple, its seven-day growth and how long it has run without a token, and each carries a farm plan with its cost and its time.';
+    : 'The board covers every protocol on the snapshot’s watchlist and every other protocol that records no token, at any size. Each row is priced by its category’s measured market-cap multiple, a tilt fitted on the snapshot’s own record, its seven-day growth and how long it has run without a token — with a 90% band, the peers’ odds and a farm plan that carries its own ledger.';
   const categories = [...new Set(DATA.rows.map((r) => categoryOf(r)))].sort();
   return `<div class="page">
   ${head(DATA, { eyebrow: scope === 'watchlist' ? 'Watchlist' : 'Board', title, lead })}
   ${kpis(DATA, scope === 'watchlist' ? DATA.rows.filter((r) => r.watchlisted) : DATA.rows)}
+  ${strip(DATA)}
   ${controls(route.filters, categories, rows.length, scope === 'watchlist' ? DATA.rows.filter((r) => r.watchlisted).length : DATA.rows.length)}
   ${table(rows, route.filters)}
   ${foot(DATA)}
@@ -77,7 +79,6 @@ function render() {
     main.innerHTML = boardPage(route, route.section === 'watchlist' ? 'watchlist' : 'board');
   }
 
-  // The rail says which section is open, and carries the snapshot's identity.
   const current = route.detail ? 'board' : route.section;
   document.querySelectorAll('[data-nav]').forEach((link) => {
     if (link.getAttribute('data-nav') === current) link.setAttribute('aria-current', 'page');
@@ -90,7 +91,7 @@ function render() {
   window.__shotReady = true;
 }
 
-/** Attach the controls of whatever section was just drawn. */
+/** Wire what was just drawn. */
 function wire(route) {
   const search = main.querySelector('#q');
   if (search) {
@@ -146,7 +147,7 @@ function wire(route) {
   });
 }
 
-/** The rail's own figures: the snapshot, the model, the floor's coverage. */
+/** The rail's figures. */
 function rail() {
   const coverage = Math.round(DATA.stats.watchlist_coverage * 100);
   railMeta.innerHTML = `

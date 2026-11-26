@@ -1,5 +1,4 @@
-// Charts, drawn by hand as SVG strings: no library, no canvas, no network. Each builder takes the data
-// it needs and returns markup, so a view can put it in place with one assignment.
+// Charts, hand-drawn as SVG: no library, no canvas, no network.
 
 const PALETTE = { amber: '#f4b740', teal: '#3ed6b8', violet: '#9d8cff', line: '#27333f', grid: '#1b2531', muted: '#7f8d9f' };
 
@@ -13,11 +12,7 @@ export function escape(value) {
   return String(value).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 }
 
-/**
- * The calibration as a dot chart: one row per category, a dot at the multiple the market paid for a
- * dollar of that category's TVL, sized by how many trading protocols the median was taken from. The
- * dashed line is the snapshot-wide median every thin category falls back to.
- */
+/** The calibration as a dot chart: a dot per category, sized by its sample count, against the snapshot median. */
 export function calibrationChart(calibration, width = 720) {
   const rows = Object.entries(calibration.by_category)
     .map(([category, m]) => ({ category, ...m }))
@@ -59,16 +54,53 @@ export function calibrationChart(calibration, width = 720) {
     `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Measured market-cap to TVL multiple by category">` +
     grid +
     `<line x1="${overall.toFixed(1)}" y1="${top}" x2="${overall.toFixed(1)}" y2="${height - 26}" stroke="${PALETTE.teal}" stroke-width="1" stroke-dasharray="4 4" />` +
-    label(overall + 4, top + 9, `all ${calibration.overall.multiple.toFixed(2)}`, 'start') +
+    label(overall + 4, top + 9, `all x${calibration.overall.multiple.toFixed(2)}`, 'start') +
     marks +
     `</svg>`
   );
 }
 
-/**
- * A protocol's peers as horizontal bars: the same category's rows by implied value, the selected row in
- * teal, ten at most. The page uses it on the detail view, where a bar chart is the fastest comparison.
- */
+/** The held-out test as a scatter: fitted multiple across, the multiple the market paid up; the diagonal is a perfect call. */
+export function holdoutChart(test, width = 520, height = 300) {
+  const points = test && Array.isArray(test.points) ? test.points.filter((p) => p.p > 0 && p.a > 0) : [];
+  if (points.length === 0) return '<p class="sub">No held-out points on this snapshot.</p>';
+  const logs = points.flatMap((p) => [Math.log10(p.p), Math.log10(p.a)]);
+  const lo = Math.min(...logs) - 0.2;
+  const hi = Math.max(...logs) + 0.2;
+  const left = 44;
+  const right = width - 14;
+  const top = 12;
+  const bottom = height - 34;
+  const x = (v) => left + ((Math.log10(v) - lo) / (hi - lo)) * (right - left);
+  const y = (v) => bottom - ((Math.log10(v) - lo) / (hi - lo)) * (bottom - top);
+
+  const ticks = [0.01, 0.03, 0.1, 0.3, 1, 3, 10, 30].filter((v) => Math.log10(v) >= lo && Math.log10(v) <= hi);
+  const grid = ticks
+    .map(
+      (v) =>
+        `<line class="grid-line" x1="${x(v).toFixed(1)}" y1="${top}" x2="${x(v).toFixed(1)}" y2="${bottom}" />` +
+        `<line class="grid-line" x1="${left}" y1="${y(v).toFixed(1)}" x2="${right}" y2="${y(v).toFixed(1)}" />` +
+        label(x(v), bottom + 14, `x${v}`, 'middle') +
+        label(left - 6, y(v) + 3, `x${v}`, 'end'),
+    )
+    .join('');
+
+  const dots = points
+    .map((p) => `<circle class="dot" cx="${x(p.p).toFixed(1)}" cy="${y(p.a).toFixed(1)}" r="3" fill-opacity="0.75"><title>fitted x${p.p}, market x${p.a}</title></circle>`)
+    .join('');
+
+  return (
+    `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Held-out fitted multiple against the multiple the market paid">` +
+    grid +
+    `<line x1="${x(10 ** lo).toFixed(1)}" y1="${y(10 ** lo).toFixed(1)}" x2="${x(10 ** hi).toFixed(1)}" y2="${y(10 ** hi).toFixed(1)}" stroke="${PALETTE.teal}" stroke-width="1" stroke-dasharray="4 4" />` +
+    dots +
+    label(left + 4, top + 10, 'perfect call', 'start') +
+    `<text class="label" x="${(left + right) / 2}" y="${height - 4}" text-anchor="middle">fitted multiple, log scale</text>` +
+    `</svg>`
+  );
+}
+
+/** A protocol's peers as horizontal bars, the selected row in teal. */
 export function peerBars(rows, selectedSlug, width = 420) {
   const shown = rows.slice(0, 8);
   if (shown.length === 0) return '';
@@ -88,7 +120,6 @@ export function peerBars(rows, selectedSlug, width = 420) {
         const name = r.name.length > 26 ? `${r.name.slice(0, 25)}…` : r.name;
         return (
           `<rect class="bar-mark" x="${left}" y="${y + 3}" width="${w.toFixed(1)}" height="9" rx="2" fill="${fill}" fill-opacity="${r.slug === selectedSlug ? 1 : 0.42}" />` +
-          label(left, y + 0, '') +
           `<text class="label" x="${w + 6}" y="${y + 12}" fill="${PALETTE.muted}">${escape(name)}</text>`
         );
       })
